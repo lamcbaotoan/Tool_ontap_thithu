@@ -5,7 +5,7 @@
 <head runat="server">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Tool_ontapsiucapPro - Hệ Thống Ôn Tập</title>
+    <title>Tool_ontap - Hệ Thống Ôn Tập</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -95,7 +95,7 @@
     <form id="form1" runat="server" style="display:flex; flex-direction:column; min-height:100vh;">
         <nav class="navbar">
             <div class="nav-links">
-                <a href="Default.aspx" class="brand"><i class="fa-solid fa-bolt"></i> Tool_ontapsiucapPro</a>
+                <a href="Default.aspx" class="brand"><i class="fa-solid fa-bolt"></i> Tool_ontap</a>
                 <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px;"></div>
                 <a href="Default.aspx" class="nav-item"><i class="fa-solid fa-pen-to-square"></i> <span>Thi</span></a>
                 <a href="Tool.aspx" class="nav-item"><i class="fa-solid fa-wrench"></i> <span>Tool</span></a>
@@ -108,7 +108,7 @@
         </div>
 
         <div class="footer">
-            © 2026 Tool_ontapsiucapPro. Developed with ❤️ by lamcbaotoan.
+            © 2026 Tool_ontap. Developed with ❤️ by lamcbaotoan.
         </div>
     </form>
 
