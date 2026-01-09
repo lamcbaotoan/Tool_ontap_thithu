@@ -1,0 +1,133 @@
+﻿<%@ Master Language="C#" AutoEventWireup="true" CodeBehind="Site.master.cs" Inherits="toolontaptn.Site" %>
+
+<!DOCTYPE html>
+<html lang="vi">
+<head runat="server">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>ToolontapsiucapPro - Hệ Thống Ôn Tập</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --primary-glow: rgba(79, 70, 229, 0.15);
+            --bg-body: #f8fafc;
+            --bg-nav: rgba(255, 255, 255, 0.9);
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --header-h: 60px;
+        }
+
+        [data-theme="dark"] {
+            --primary: #818cf8;
+            --primary-hover: #6366f1;
+            --primary-glow: rgba(129, 140, 248, 0.2);
+            --bg-body: #0f172a;
+            --bg-nav: rgba(15, 23, 42, 0.9);
+            --bg-card: #1e293b;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+        }
+
+        body { 
+            margin: 0; font-family: 'Inter', sans-serif; 
+            background: var(--bg-body); color: var(--text-main); 
+            transition: background 0.3s, color 0.3s; 
+            display: flex; flex-direction: column; min-height: 100vh;
+        }
+
+        /* Navbar */
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; height: var(--header-h);
+            background: var(--bg-nav); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color); z-index: 1000;
+            display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+        }
+        .brand { font-size: 18px; font-weight: 800; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+        .nav-links { display: flex; gap: 10px; }
+        .nav-item { 
+            color: var(--text-muted); text-decoration: none; font-weight: 600; font-size: 14px; 
+            padding: 8px 12px; border-radius: 8px; transition: 0.2s; display: flex; align-items: center; gap: 6px;
+        }
+        .nav-item:hover, .nav-item.active { color: var(--primary); background: var(--primary-glow); }
+        
+        .theme-btn { 
+            width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; 
+            border-radius: 50%; cursor: pointer; color: var(--text-muted); transition: 0.3s; 
+        }
+        .theme-btn:hover { background: var(--border-color); color: var(--text-main); }
+
+        /* Main Layout */
+        .main-wrapper { 
+            margin-top: var(--header-h); 
+            flex: 1; /* Đẩy footer xuống đáy */
+            padding: 20px; 
+            display: flex; flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        /* Footer Optimized */
+        .footer {
+            text-align: center; padding: 15px; font-size: 12px; color: var(--text-muted);
+            border-top: 1px solid var(--border-color); background: var(--bg-body);
+            margin-top: auto; /* Sticky footer logic */
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .nav-item span { display: none; } /* Ẩn chữ menu trên mobile */
+            .main-wrapper { padding: 10px; }
+            .footer { padding-bottom: 80px; } /* Tránh bị che bởi thanh điều hướng mobile nếu có */
+        }
+    </style>
+    <asp:ContentPlaceHolder ID="HeadContent" runat="server"></asp:ContentPlaceHolder>
+</head>
+<body>
+    <form id="form1" runat="server" style="display:flex; flex-direction:column; min-height:100vh;">
+        <nav class="navbar">
+            <div class="nav-links">
+                <a href="Default.aspx" class="brand"><i class="fa-solid fa-bolt"></i> ToolontapPro</a>
+                <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px;"></div>
+                <a href="Default.aspx" class="nav-item"><i class="fa-solid fa-pen-to-square"></i> <span>Thi</span></a>
+                <a href="Tool.aspx" class="nav-item"><i class="fa-solid fa-wrench"></i> <span>Tool</span></a>
+            </div>
+            <div class="theme-btn" onclick="toggleTheme()" id="theme-icon"><i class="fa-solid fa-moon"></i></div>
+        </nav>
+        
+        <div class="main-wrapper">
+            <asp:ContentPlaceHolder ID="MainContent" runat="server"></asp:ContentPlaceHolder>
+        </div>
+
+        <div class="footer">
+            © 2026 ToolontapsiucapPro. Developed with ❤️ by lamcbaotoan.
+        </div>
+    </form>
+
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const target = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', target);
+            localStorage.setItem('theme', target);
+            updateIcon(target);
+        }
+        function updateIcon(theme) {
+            document.getElementById('theme-icon').innerHTML = theme === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+        }
+        (function () {
+            const saved = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', saved);
+            updateIcon(saved);
+        })();
+    </script>
+</body>
+</html>
