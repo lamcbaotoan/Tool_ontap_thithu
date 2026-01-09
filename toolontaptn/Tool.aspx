@@ -1,6 +1,6 @@
 ﻿<%@ Page Title="Công Cụ Chuẩn Hóa" Language="C#" MasterPageFile="~/Site.Master" AutoEventWireup="true" CodeBehind="Tool.aspx.cs" Inherits="toolontaptn.Tool" ClientIDMode="Static" %>
 
-<asp:Content ID="Content1" ContentPlaceHolderID="HeadContent" runat="server">
+<asp:Content ID="Content3" ContentPlaceHolderID="HeadContent" runat="server">
     <style>
         .tool-wrapper { display: flex; flex-direction: column; height: calc(100vh - 100px); gap: 15px; }
         .toolbar { display: flex; gap: 10px; justify-content: flex-end; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
@@ -26,7 +26,7 @@
     </style>
 </asp:Content>
 
-<asp:Content ID="Content2" ContentPlaceHolderID="MainContent" runat="server">
+<asp:Content ID="Content4" ContentPlaceHolderID="MainContent" runat="server">
     <div class="tool-wrapper">
         <div class="toolbar">
              <button type="button" class="btn-tool btn-convert" onclick="convertData()"><i class="fa-solid fa-wand-magic-sparkles"></i> Chuẩn Hóa</button>
@@ -46,37 +46,108 @@
         </div>
     </div>
 
-    <script>
-        function convertData() {
-            const raw = document.getElementById('input').value;
-            const lines = raw.split('\n');
-            const result = lines.map(line => {
-                let text = line.trim();
-                if (!text) return '';
-                const qMatch = text.match(/^(\d+)[\.\)]\s*(.*)/);
-                if (qMatch) return `Câu ${qMatch[1]}: ${qMatch[2]}`;
-                const oMatch = text.match(/^(\*)?\s*([a-zA-Z])[\.\)]\s*(.*)/);
-                if (oMatch) return `${oMatch[1] ? '*' : ''}${oMatch[2].toUpperCase()}. ${oMatch[3].trim()}`;
-                return text;
-            }).filter(l => l !== '').join('\n\n');
-            document.getElementById('output').value = result;
+<script>
+    // --- UTILS & CACHE ---
+    const CACHE_KEY = 'tool_draft_input';
+    
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2000,
+        timerProgressBar: true
+    });
+
+    // --- 1. INIT & RESTORE SESSION ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const inputEl = document.getElementById('input');
+        
+        // A. Phục hồi dữ liệu nếu F5
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+            inputEl.value = cached;
+            // Tự động convert không cần thông báo để user thấy kết quả ngay
+            convertData(false); 
         }
 
-        function copyToClipboard() {
-            const out = document.getElementById('output');
-            out.select(); document.execCommand('copy');
-            const btn = document.querySelector('.btn-copy');
-            const org = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-check"></i> Đã Copy';
-            setTimeout(() => btn.innerHTML = org, 1500);
+        // B. Lưu cache khi nhập liệu
+        inputEl.addEventListener('input', function() {
+            sessionStorage.setItem(CACHE_KEY, this.value);
+        });
+    });
+
+    // --- 2. MAIN FUNCTIONS ---
+    function convertData(showToast = true) {
+        const raw = document.getElementById('input').value;
+        const outputEl = document.getElementById('output');
+
+        if(!raw.trim()) {
+            outputEl.value = '';
+            if(showToast) Toast.fire({ icon: 'info', title: 'Chưa có dữ liệu!' });
+            return;
         }
 
-        function transferToQuiz() {
-            convertData();
-            const val = document.getElementById('output').value;
-            if (!val.trim()) return alert("Chưa có dữ liệu!");
-            localStorage.setItem('autoImportQuiz', val);
+        const lines = raw.split('\n');
+        const result = lines.map(line => {
+            let text = line.trim();
+            if (!text) return '';
+            
+            // Regex bắt câu hỏi (1. hoặc 1) hoặc Câu 1:)
+            const qMatch = text.match(/^(\d+)[\.\)]\s*(.*)/);
+            if (qMatch) return `Câu ${qMatch[1]}: ${qMatch[2]}`;
+            
+            // Regex bắt đáp án (*a. hoặc A. hoặc a))
+            const oMatch = text.match(/^(\*)?\s*([a-zA-Z])[\.\)]\s*(.*)/);
+            if (oMatch) return `${oMatch[1] ? '*' : ''}${oMatch[2].toUpperCase()}. ${oMatch[3].trim()}`;
+            
+            return text;
+        }).filter(l => l !== '').join('\n\n');
+        
+        outputEl.value = result;
+        
+        if(showToast) Toast.fire({ icon: 'success', title: 'Đã chuẩn hóa!' });
+    }
+
+    function copyToClipboard() {
+        const out = document.getElementById('output');
+        if(!out.value.trim()) return Toast.fire({ icon: 'warning', title: 'Không có nội dung!' });
+        
+        out.select(); document.execCommand('copy');
+        Toast.fire({ icon: 'success', title: 'Đã sao chép!' });
+    }
+
+    function transferToQuiz() {
+        // Convert lần cuối để đảm bảo dữ liệu mới nhất
+        convertData(false); 
+        const val = document.getElementById('output').value;
+        
+        if (!val.trim()) {
+             Swal.fire({
+                icon: 'error',
+                title: 'Lỗi',
+                text: 'Chưa có dữ liệu kết quả để chuyển!',
+                confirmButtonColor: '#d33'
+            });
+            return;
+        }
+        
+        // Lưu vào LocalStorage để trang Default đọc được
+        localStorage.setItem('autoImportQuiz', val);
+        
+        // Hiệu ứng Loading chuyển trang
+        let timerInterval
+        Swal.fire({
+          title: 'Đang chuyển hướng...',
+          html: 'Vui lòng chờ trong giây lát.',
+          timer: 800,
+          timerProgressBar: true,
+          didOpen: () => {
+            Swal.showLoading()
+          },
+          willClose: () => {
             window.location.href = 'Default.aspx';
-        }
-    </script>
+          }
+        })
+    }
+</script>
 </asp:Content>

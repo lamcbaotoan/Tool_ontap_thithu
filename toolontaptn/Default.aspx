@@ -230,212 +230,370 @@ C. TP.HCM</div>
         </div>
     </div>
 
-    <script>
-        // --- LOGIC UI & TABS ---
-        function switchTab(name) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.getElementById(`tab-${name}`).classList.add('active');
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-        }
+<script>
+    // --- 1. CONFIG & UTILS ---
+    const CACHE_KEY = 'quiz_draft_data';   // Cache của phiên làm việc (mất khi đóng browser)
+    const IMPORT_KEY = 'autoImportQuiz';   // Key nhận từ Tool
 
-        function copySample() {
-            const sample = "1. Thủ đô của Việt Nam là?\nA. TP. Hồ Chí Minh\n*B. Hà Nội\nC. Đà Nẵng\n\n2. 2 + 2 bằng mấy?\n*A. 4\nB. 5\nC. 6";
-            document.getElementById('input-data').value = sample;
+    // Mixin cho thông báo nhỏ (Toast)
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true
+    });
+
+    let app = { 
+        mode: 'practice', 
+        questions: [], 
+        currentIndex: 0, 
+        userAnswers: [], 
+        timerId: null, 
+        timeRemaining: 0, 
+        isSubmitted: false 
+    };
+
+    // --- 2. INIT & CACHE LOGIC ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const inputArea = document.getElementById('input-data');
+
+        // A. Kiểm tra dữ liệu chuyển từ Tool (Ưu tiên 1)
+        const imported = localStorage.getItem(IMPORT_KEY);
+        if (imported) {
+            inputArea.value = imported;
+            sessionStorage.setItem(CACHE_KEY, imported); // Lưu ngay vào cache phiên
+            localStorage.removeItem(IMPORT_KEY);         // Xóa key chuyển để không load lại
             switchTab('input');
-        }
-
-        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
-        function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
-
-        // --- CORE QUIZ LOGIC ---
-        let app = { mode: 'practice', questions: [], currentIndex: 0, userAnswers: [], timerId: null, timeRemaining: 0, isSubmitted: false };
-
-        function setMode(mode) {
-            app.mode = mode;
-            document.getElementById('mode-practice').classList.toggle('active', mode === 'practice');
-            document.getElementById('mode-exam').classList.toggle('active', mode === 'exam');
-            document.getElementById('chk-pra').className = mode === 'practice' ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle';
-            document.getElementById('chk-exa').className = mode === 'exam' ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle';
-            const tm = document.getElementById('cfg-time');
-            tm.disabled = (mode === 'practice');
-            tm.style.opacity = mode === 'practice' ? '0.5' : '1';
-        }
-
-        function parseInput(text) {
-            const lines = text.split('\n');
-            let qs = [], currentQ = null;
-            const optionRegex = /^(\*)?([a-zA-Z])[\.\)]\s+(.*)/;
-            lines.forEach(line => {
-                line = line.trim();
-                if (!line) return;
-                const match = line.match(optionRegex);
-                if (match) {
-                    if (currentQ) currentQ.options.push({ label: match[2].toUpperCase(), content: match[3], isCorrect: match[1] === '*' });
-                } else {
-                    if (!currentQ || currentQ.options.length > 0) {
-                        currentQ = { text: line, options: [], type: 'single' }; qs.push(currentQ);
-                    } else currentQ.text += "<br/>" + line;
-                }
-            });
-            return qs.filter(q => q.options.length > 0).map(q => { q.type = q.options.filter(o => o.isCorrect).length > 1 ? 'multi' : 'single'; return q; });
-        }
-
-        function startQuiz() {
-            const raw = document.getElementById('input-data').value;
-            let qs = parseInput(raw);
-            if (!qs.length) return alert('Dữ liệu trống hoặc sai định dạng!');
-
-            if (document.getElementById('cfg-shuffle-q').checked) qs.sort(() => Math.random() - 0.5);
-            if (document.getElementById('cfg-shuffle-a').checked) qs.forEach(q => q.options.sort(() => Math.random() - 0.5));
-            // Re-label options after shuffle
-            qs.forEach(q => q.options.forEach((o, i) => o.label = String.fromCharCode(65 + i)));
-
-            app.questions = qs;
-            app.userAnswers = qs.map(() => []);
-            app.isSubmitted = false;
-            app.currentIndex = 0;
-
-            document.getElementById('setup-screen').style.display = 'none';
-            document.getElementById('quiz-app').style.display = 'flex';
-
-            if (app.mode === 'exam') {
-                app.timeRemaining = (parseInt(document.getElementById('cfg-time').value) || 45) * 60;
-                startTimer();
-                document.getElementById('timer').classList.remove('hidden');
-                document.getElementById('nav-btns').style.display = 'none'; // Scroll for exam
-                renderAllQuestions();
-            } else {
-                document.getElementById('timer').classList.add('hidden');
-                document.getElementById('nav-btns').style.display = 'flex';
-                renderOneQuestion(0);
+            Toast.fire({ icon: 'success', title: 'Đã nhận dữ liệu từ Tool!' });
+        } 
+        // B. Kiểm tra dữ liệu cũ trong phiên (Ưu tiên 2 - khi F5)
+        else {
+            const cached = sessionStorage.getItem(CACHE_KEY);
+            if (cached) {
+                inputArea.value = cached;
             }
-            renderPalette();
-            updateProgress();
         }
 
-        function getQuestionHTML(q, idx) {
-            const u = app.userAnswers[idx];
-            const showRes = app.isSubmitted || (app.mode === 'practice' && u.length > 0);
-            let h = `<div class="q-card" id="q-card-${idx}">
-                <div class="q-meta">CÂU ${idx + 1} ${q.type === 'multi' ? '(CHỌN NHIỀU)' : ''}</div>
-                <div class="q-text">${q.text}</div><div>`;
-            q.options.forEach((o, i) => {
-                let cls = 'option-item';
-                const sel = u.includes(i);
-                if (showRes) {
-                    if (o.isCorrect) cls += ' correct';
-                    else if (sel) cls += ' wrong';
-                } else if (sel) cls += ' selected';
-
-                h += `<div class="${cls}" onclick="handleSelect(${idx}, ${i})"><div class="option-marker">${o.label}</div><div style="flex:1">${o.content}</div></div>`;
-            });
-            return h + '</div></div>';
-        }
-
-        function renderOneQuestion(i) {
-            if (i < 0 || i >= app.questions.length) return;
-            app.currentIndex = i;
-            document.getElementById('main-container').innerHTML = getQuestionHTML(app.questions[i], i);
-            document.getElementById('q-counter').innerText = `${i + 1}/${app.questions.length}`;
-            renderPalette();
-            updateProgress();
-        }
-
-        function renderAllQuestions() {
-            document.getElementById('main-container').innerHTML = app.questions.map((q, i) => getQuestionHTML(q, i)).join('');
-            updateProgress();
-        }
-
-        function handleSelect(qIdx, oIdx) {
-            if (app.isSubmitted) return;
-            const q = app.questions[qIdx];
-            if (app.mode === 'practice' && app.userAnswers[qIdx].length > 0 && q.type === 'single') return;
-
-            let cur = app.userAnswers[qIdx];
-            if (q.type === 'single') app.userAnswers[qIdx] = [oIdx];
-            else {
-                const f = cur.indexOf(oIdx);
-                f === -1 ? cur.push(oIdx) : cur.splice(f, 1);
-            }
-
-            if (app.mode === 'exam') {
-                const el = document.getElementById(`q-card-${qIdx}`);
-                if (el) el.outerHTML = getQuestionHTML(q, qIdx);
-            } else renderOneQuestion(qIdx);
-
-            renderPalette();
-            updateProgress();
-        }
-
-        function renderPalette() {
-            const p = document.getElementById('palette'); p.innerHTML = '';
-            app.questions.forEach((q, i) => {
-                const d = document.createElement('div'); d.className = 'p-item'; d.innerText = i + 1;
-                const u = app.userAnswers[i];
-                const show = app.isSubmitted || (app.mode === 'practice' && u.length > 0);
-
-                if (show) {
-                    const c = q.options.map((o, k) => o.isCorrect ? k : -1).filter(k => k !== -1);
-                    const isOk = u.length === c.length && u.every(v => c.includes(v));
-                    if (u.length > 0) d.classList.add(isOk ? 'res-correct' : 'res-wrong');
-                } else if (u.length > 0) d.classList.add('answered');
-
-                if (i === app.currentIndex && app.mode !== 'exam') d.classList.add('current');
-                d.onclick = () => { closeSidebar(); if (app.mode === 'exam') document.getElementById(`q-card-${i}`).scrollIntoView({ behavior: 'smooth', block: 'center' }); else renderOneQuestion(i); };
-                p.appendChild(d);
-            });
-        }
-
-        function updateProgress() {
-            const pct = (app.userAnswers.filter(a => a.length > 0).length / app.questions.length) * 100;
-            document.getElementById('progress-line').style.width = pct + '%';
-        }
-
-        function changeSlide(d) { renderOneQuestion(app.currentIndex + d); }
-
-        function startTimer() {
-            if (app.timerId) clearInterval(app.timerId);
-            app.timerId = setInterval(() => {
-                app.timeRemaining--;
-                const m = Math.floor(app.timeRemaining / 60).toString().padStart(2, '0');
-                const s = (app.timeRemaining % 60).toString().padStart(2, '0');
-                document.getElementById('timer').innerText = m + ':' + s;
-                if (app.timeRemaining <= 0) finishQuiz();
-            }, 1000);
-        }
-
-        function confirmSubmit() { if (confirm("Nộp bài nhé?")) finishQuiz(); }
-
-        function finishQuiz() {
-            if (app.isSubmitted) return;
-            clearInterval(app.timerId);
-            app.isSubmitted = true;
-            let score = 0;
-            app.questions.forEach((q, i) => {
-                const u = app.userAnswers[i];
-                const c = q.options.map((o, k) => o.isCorrect ? k : -1).filter(k => k !== -1);
-                if (u.length === c.length && u.every(v => c.includes(v))) score++;
-            });
-
-            if (app.mode === 'exam') renderAllQuestions(); else renderOneQuestion(app.currentIndex);
-            renderPalette();
-            document.getElementById('res-score').innerText = `${score}/${app.questions.length}`;
-            document.getElementById('result-modal').classList.remove('hidden');
-            if ((score / app.questions.length) >= 0.7) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-        }
-
-        function restartQuiz() {
-            document.getElementById('result-modal').classList.add('hidden');
-            startQuiz();
-        }
-        function reviewQuiz() { document.getElementById('result-modal').classList.add('hidden'); }
-        function backToSetup() { if (confirm("Thoát?")) location.reload(); }
-
-        // Auto Import Logic
-        document.addEventListener('DOMContentLoaded', () => {
-            const imp = localStorage.getItem('autoImportQuiz');
-            if (imp) { document.getElementById('input-data').value = imp; localStorage.removeItem('autoImportQuiz'); }
+        // C. Lắng nghe nhập liệu để lưu Cache liên tục
+        inputArea.addEventListener('input', function() {
+            sessionStorage.setItem(CACHE_KEY, this.value);
         });
-    </script>
+    });
+
+    // --- 3. UI TABS & NAVIGATION ---
+    function switchTab(name) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.getElementById(`tab-${name}`).classList.add('active');
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        event.currentTarget.classList.add('active');
+    }
+
+    function copySample() {
+        const sample = "1. Thủ đô của Việt Nam là?\nA. TP. Hồ Chí Minh\n*B. Hà Nội\nC. Đà Nẵng\n\n2. 2 + 2 bằng mấy?\n*A. 4\nB. 5\nC. 6";
+        const inputArea = document.getElementById('input-data');
+        inputArea.value = sample;
+        sessionStorage.setItem(CACHE_KEY, sample); // Lưu cache mẫu
+        switchTab('input');
+        Toast.fire({ icon: 'info', title: 'Đã nạp mẫu thử nghiệm' });
+    }
+
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+    function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+
+    function backToSetup() { 
+        Swal.fire({
+            title: 'Thoát bài thi?',
+            text: "Tiến độ làm bài hiện tại sẽ bị mất.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Thoát',
+            cancelButtonText: 'Ở lại'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                location.reload();
+            }
+        });
+    }
+
+    // --- 4. CORE QUIZ LOGIC ---
+    function setMode(mode) {
+        app.mode = mode;
+        document.getElementById('mode-practice').classList.toggle('active', mode === 'practice');
+        document.getElementById('mode-exam').classList.toggle('active', mode === 'exam');
+        document.getElementById('chk-pra').className = mode === 'practice' ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle';
+        document.getElementById('chk-exa').className = mode === 'exam' ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle';
+        
+        const tm = document.getElementById('cfg-time');
+        tm.disabled = (mode === 'practice');
+        tm.style.opacity = mode === 'practice' ? '0.5' : '1';
+    }
+
+    function parseInput(text) {
+        const lines = text.split('\n');
+        let qs = [], currentQ = null;
+        // Regex nhận diện đáp án (hỗ trợ A. hoặc A) hoặc a.)
+        const optionRegex = /^(\*)?([a-zA-Z])[\.\)]\s+(.*)/; 
+        
+        lines.forEach(line => {
+            line = line.trim();
+            if (!line) return;
+            const match = line.match(optionRegex);
+            if (match) {
+                if (currentQ) {
+                    currentQ.options.push({ 
+                        label: match[2].toUpperCase(), 
+                        content: match[3], 
+                        isCorrect: match[1] === '*' 
+                    });
+                }
+            } else {
+                // Nhận diện câu hỏi mới
+                if (!currentQ || currentQ.options.length > 0) {
+                    currentQ = { text: line, options: [], type: 'single' }; 
+                    qs.push(currentQ);
+                } else {
+                    // Nối thêm dòng vào câu hỏi nếu câu hỏi nhiều dòng
+                    currentQ.text += "<br/>" + line;
+                }
+            }
+        });
+        // Lọc bỏ câu lỗi và xác định loại câu (single/multi)
+        return qs.filter(q => q.options.length > 0).map(q => { 
+            q.type = q.options.filter(o => o.isCorrect).length > 1 ? 'multi' : 'single'; 
+            return q; 
+        });
+    }
+
+    function startQuiz() {
+        const raw = document.getElementById('input-data').value;
+        let qs = parseInput(raw);
+        
+        if (!qs.length) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Dữ liệu trống',
+                text: 'Vui lòng nhập hoặc dán câu hỏi vào khung nhập liệu!',
+                confirmButtonColor: '#4f46e5'
+            });
+            return;
+        }
+
+        // Xử lý cấu hình tráo đổi
+        if (document.getElementById('cfg-shuffle-q').checked) qs.sort(() => Math.random() - 0.5);
+        if (document.getElementById('cfg-shuffle-a').checked) {
+            qs.forEach(q => {
+                q.options.sort(() => Math.random() - 0.5);
+                // Đánh lại nhãn A, B, C... sau khi tráo
+                q.options.forEach((o, i) => o.label = String.fromCharCode(65 + i));
+            });
+        }
+
+        app.questions = qs;
+        app.userAnswers = qs.map(() => []);
+        app.isSubmitted = false;
+        app.currentIndex = 0;
+
+        // Chuyển màn hình
+        document.getElementById('setup-screen').style.display = 'none';
+        document.getElementById('quiz-app').style.display = 'flex';
+
+        if (app.mode === 'exam') {
+            app.timeRemaining = (parseInt(document.getElementById('cfg-time').value) || 45) * 60;
+            startTimer();
+            document.getElementById('timer').classList.remove('hidden');
+            document.getElementById('nav-btns').style.display = 'none'; // Thi thử ẩn nút Next/Prev ở dưới
+            renderAllQuestions(); // Thi thử hiện tất cả câu (dạng cuộn)
+        } else {
+            document.getElementById('timer').classList.add('hidden');
+            document.getElementById('nav-btns').style.display = 'flex';
+            renderOneQuestion(0);
+        }
+        renderPalette();
+        updateProgress();
+    }
+
+    // --- 5. RENDER LOGIC ---
+    function getQuestionHTML(q, idx) {
+        const u = app.userAnswers[idx];
+        const showRes = app.isSubmitted || (app.mode === 'practice' && u.length > 0);
+        
+        let h = `<div class="q-card" id="q-card-${idx}">
+            <div class="q-meta">CÂU ${idx + 1} ${q.type === 'multi' ? '(CHỌN NHIỀU)' : ''}</div>
+            <div class="q-text">${q.text}</div><div>`;
+        
+        q.options.forEach((o, i) => {
+            let cls = 'option-item';
+            const sel = u.includes(i);
+            
+            if (showRes) {
+                if (o.isCorrect) cls += ' correct';
+                else if (sel) cls += ' wrong';
+            } else if (sel) {
+                cls += ' selected';
+            }
+
+            h += `<div class="${cls}" onclick="handleSelect(${idx}, ${i})">
+                    <div class="option-marker">${o.label}</div>
+                    <div style="flex:1">${o.content}</div>
+                  </div>`;
+        });
+        return h + '</div></div>';
+    }
+
+    function renderOneQuestion(i) {
+        if (i < 0 || i >= app.questions.length) return;
+        app.currentIndex = i;
+        document.getElementById('main-container').innerHTML = getQuestionHTML(app.questions[i], i);
+        document.getElementById('q-counter').innerText = `${i + 1}/${app.questions.length}`;
+        renderPalette();
+        updateProgress();
+    }
+
+    function renderAllQuestions() {
+        document.getElementById('main-container').innerHTML = app.questions.map((q, i) => getQuestionHTML(q, i)).join('');
+        updateProgress();
+    }
+
+    function handleSelect(qIdx, oIdx) {
+        if (app.isSubmitted) return;
+        const q = app.questions[qIdx];
+        
+        // Chế độ ôn tập: Nếu đã trả lời rồi thì không cho chọn lại (với câu hỏi 1 đáp án)
+        if (app.mode === 'practice' && app.userAnswers[qIdx].length > 0 && q.type === 'single') return;
+
+        let cur = app.userAnswers[qIdx];
+        if (q.type === 'single') {
+            app.userAnswers[qIdx] = [oIdx];
+        } else {
+            const f = cur.indexOf(oIdx);
+            f === -1 ? cur.push(oIdx) : cur.splice(f, 1);
+        }
+
+        // Render lại giao diện câu hỏi
+        if (app.mode === 'exam') {
+            const el = document.getElementById(`q-card-${qIdx}`);
+            if (el) el.outerHTML = getQuestionHTML(q, qIdx);
+        } else {
+            renderOneQuestion(qIdx);
+        }
+
+        renderPalette();
+        updateProgress();
+    }
+
+    function renderPalette() {
+        const p = document.getElementById('palette'); p.innerHTML = '';
+        app.questions.forEach((q, i) => {
+            const d = document.createElement('div'); 
+            d.className = 'p-item'; 
+            d.innerText = i + 1;
+            
+            const u = app.userAnswers[i];
+            const show = app.isSubmitted || (app.mode === 'practice' && u.length > 0);
+
+            if (show) {
+                const c = q.options.map((o, k) => o.isCorrect ? k : -1).filter(k => k !== -1);
+                const isOk = u.length === c.length && u.every(v => c.includes(v));
+                if (u.length > 0) d.classList.add(isOk ? 'res-correct' : 'res-wrong');
+            } else if (u.length > 0) {
+                d.classList.add('answered');
+            }
+
+            if (i === app.currentIndex && app.mode !== 'exam') d.classList.add('current');
+            
+            d.onclick = () => { 
+                closeSidebar(); 
+                if (app.mode === 'exam') {
+                    document.getElementById(`q-card-${i}`).scrollIntoView({ behavior: 'smooth', block: 'center' }); 
+                } else {
+                    renderOneQuestion(i); 
+                }
+            };
+            p.appendChild(d);
+        });
+    }
+
+    function updateProgress() {
+        const pct = (app.userAnswers.filter(a => a.length > 0).length / app.questions.length) * 100;
+        document.getElementById('progress-line').style.width = pct + '%';
+    }
+
+    function changeSlide(d) { renderOneQuestion(app.currentIndex + d); }
+
+    // --- 6. TIMER & SUBMIT ---
+    function startTimer() {
+        if (app.timerId) clearInterval(app.timerId);
+        app.timerId = setInterval(() => {
+            app.timeRemaining--;
+            const m = Math.floor(app.timeRemaining / 60).toString().padStart(2, '0');
+            const s = (app.timeRemaining % 60).toString().padStart(2, '0');
+            document.getElementById('timer').innerText = m + ':' + s;
+            if (app.timeRemaining <= 0) finishQuiz();
+        }, 1000);
+    }
+
+    function confirmSubmit() { 
+        const unanswered = app.userAnswers.filter(a => a.length === 0).length;
+        const msg = unanswered > 0 ? `Còn ${unanswered} câu chưa làm.` : 'Bạn đã làm hết các câu hỏi.';
+        
+        Swal.fire({
+            title: 'Nộp bài?',
+            text: `${msg} Bạn có chắc chắn muốn nộp không?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Nộp ngay',
+            cancelButtonText: 'Làm tiếp'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                finishQuiz();
+            }
+        });
+    }
+
+    function finishQuiz() {
+        if (app.isSubmitted) return;
+        clearInterval(app.timerId);
+        app.isSubmitted = true;
+        let score = 0;
+        
+        app.questions.forEach((q, i) => {
+            const u = app.userAnswers[i];
+            const c = q.options.map((o, k) => o.isCorrect ? k : -1).filter(k => k !== -1);
+            if (u.length === c.length && u.every(v => c.includes(v))) score++;
+        });
+
+        // Render lại để hiện màu đúng sai
+        if (app.mode === 'exam') renderAllQuestions(); else renderOneQuestion(app.currentIndex);
+        renderPalette();
+
+        document.getElementById('res-score').innerText = `${score}/${app.questions.length}`;
+        const percent = (score / app.questions.length);
+        
+        // Thông báo kết quả
+        let msg = "Cố gắng hơn lần sau nhé!";
+        if(percent >= 0.5) msg = "Khá tốt!";
+        if(percent >= 0.8) msg = "Tuyệt vời!";
+        document.getElementById('res-msg').innerText = msg;
+
+        document.getElementById('result-modal').classList.remove('hidden');
+        
+        // Hiệu ứng pháo hoa nếu điểm cao
+        if (percent >= 0.7) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+    }
+
+    function restartQuiz() {
+        document.getElementById('result-modal').classList.add('hidden');
+        startQuiz();
+    }
+    
+    function reviewQuiz() { 
+        document.getElementById('result-modal').classList.add('hidden'); 
+    }
+</script>
 </asp:Content>
+
